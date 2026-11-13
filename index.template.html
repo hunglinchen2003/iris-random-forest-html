@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鳶尾花種類預測 — Random Forest 獨立網頁</title>
+<meta name="description" content="把 03_Machine_learning.R 的 Shiny 隨機森林改成單一 HTML。預測使用同一批樹與同一套投票公式，並已與 R 的 predict() 核對。">
+<style>
+  :root {
+    --ink: #221c18;
+    --muted: #655d54;
+    --line: #e4d9c9;
+    --paper: #f4efe7;
+    --card: #fffdf9;
+    --accent: #9d2c3a;
+    --bar: #B2182B;
+    --good: #1d6b45;
+    --setosa: #c4842d;
+    --versicolor: #2a7563;
+    --virginica: #3a4d86;
+    --shadow: 0 18px 50px rgba(48, 32, 18, 0.08);
+    --sans: "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --mono: "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 500px at 10% -10%, rgba(157, 44, 58, 0.08), transparent 55%),
+      var(--paper);
+    font-family: var(--sans);
+    font-size: 16.5px;
+    line-height: 1.65;
+  }
+  a { color: var(--accent); }
+  .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+  header.site {
+    background: #17241f;
+    color: #f6f1e7;
+  }
+  header.site code { background: rgba(246, 241, 231, 0.14); color: #f6f1e7; }
+  .site-inner { padding: 28px 0 22px; }
+  .eyebrow {
+    margin: 0 0 8px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    color: #d7c4a4;
+  }
+  h1 { margin: 0; font-size: clamp(2rem, 4vw, 3.15rem); line-height: 1.15; font-weight: 650; letter-spacing: -0.03em; }
+  .lede { max-width: 740px; margin: 14px 0 0; color: #e7e0d4; font-size: 1.05rem; }
+  .mark { display: flex; gap: 16px; align-items: flex-start; }
+  .mark svg { width: 58px; height: 58px; flex: none; margin-top: 6px; }
+  .page-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .page-nav a {
+    color: #f6f1e7;
+    text-decoration: none;
+    border: 1px solid rgba(246, 241, 231, 0.28);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.92rem;
+  }
+  .page-nav a:hover { background: rgba(246, 241, 231, 0.08); }
+  main { padding: 28px 0 64px; }
+  .app {
+    display: grid;
+    grid-template-columns: 330px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .controls { padding: 18px 18px 8px; }
+  @media (min-width: 960px) {
+    .controls {
+      position: sticky;
+      top: 14px;
+      max-height: calc(100vh - 28px);
+      overflow: auto;
+    }
+  }
+  .controls h2, .stage h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .hint { color: var(--muted); font-size: 0.86rem; margin: 0 0 12px; }
+  .slider-block { margin: 0 0 14px; }
+  .slider-head, .vote-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .slider-head strong { font-weight: 650; }
+  .slider-head span, .range-note { color: var(--muted); font-size: 0.82rem; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); margin: 6px 0 2px; }
+  .slider-foot { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  input[type="number"] {
+    width: 5.4rem;
+    font: inherit;
+    padding: 4px 6px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+  }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; }
+  button {
+    font: inherit;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 6px 10px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  button:hover { border-color: #c8b8a4; }
+  button.active { background: #17241f; color: #f6f1e7; border-color: #17241f; }
+  .summary { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+  .summary p { margin: 4px 0; }
+  .acc { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .stage { display: grid; gap: 18px; }
+  .predict { padding: 22px 22px 18px; border-top: 8px solid var(--accent); }
+  .kicker { margin: 0; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.78rem; }
+  .species {
+    margin: 4px 0 0;
+    font-size: clamp(2.4rem, 5vw, 3.6rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+  }
+  .zh { margin: 4px 0 0; font-size: 1.15rem; }
+  .latin { margin: 0; color: var(--muted); font-style: italic; }
+  .sentence { margin: 12px 0 0; }
+  .votes { display: grid; gap: 10px; margin-top: 16px; }
+  .vote { display: grid; grid-template-columns: 9.5rem 1fr auto; gap: 10px; align-items: center; }
+  .swatch { width: 0.7rem; height: 0.7rem; border-radius: 99px; display: inline-block; margin-right: 6px; }
+  .track { height: 10px; background: #efe7dc; border-radius: 99px; overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 99px; }
+  .vote-num { font-variant-numeric: tabular-nums; font-size: 0.92rem; min-width: 7.5rem; text-align: right; }
+  .plot, .importance, .docs { padding: 18px 20px 20px; }
+  .plot h2, .importance h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  svg.scatter { width: 100%; height: auto; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-top: 8px; color: var(--muted); font-size: 0.9rem; }
+  .bars { display: grid; gap: 8px; margin-top: 10px; }
+  .bar-row { display: grid; grid-template-columns: 8.2rem 1fr auto; gap: 8px; align-items: center; font-size: 0.92rem; }
+  .bar-track { height: 12px; background: #f3ebe3; border-radius: 99px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--bar); border-radius: 99px; }
+  .bar-val { font-variant-numeric: tabular-nums; }
+  article { margin-top: 42px; }
+  article h2 { font-size: 1.7rem; line-height: 1.25; margin: 2.2rem 0 0.6rem; letter-spacing: -0.03em; }
+  article h3 { font-size: 1.15rem; margin: 1.4rem 0 0.4rem; }
+  .prose p, .prose li { max-width: 760px; }
+  .prose ol, .prose ul { padding-left: 1.2rem; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: #efe6da;
+    padding: 0.1em 0.35em;
+    border-radius: 6px;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    line-height: 1.55;
+    background: #1c1915;
+    color: #f6f1e7;
+    padding: 14px 16px;
+    border-radius: 14px;
+    overflow: auto;
+    max-width: 760px;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 1120px; }
+  .compare pre { max-width: none; }
+  .compare h3 { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; background: var(--card); }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.82rem; letter-spacing: 0.04em; color: var(--muted); font-weight: 650; }
+  tr.selected { background: #f8efe8; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; margin: 12px 0 18px; }
+  .status {
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin: 12px 0;
+    background: #e7f4ec;
+    color: #143d28;
+    max-width: 760px;
+  }
+  .status.bad { background: #fdecee; color: #6d1c28; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0 8px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .step b { display: block; color: var(--accent); font-size: 0.82rem; letter-spacing: 0.08em; }
+  footer { color: var(--muted); font-size: 0.88rem; padding-bottom: 28px; }
+  @media (max-width: 900px) {
+    .app, .compare, .steps { grid-template-columns: 1fr; }
+    .vote { grid-template-columns: 1fr; gap: 4px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<header class="site">
+  <div class="wrap site-inner">
+    <div class="mark">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="7" fill="#e2c27a"/>
+        <ellipse cx="32" cy="15" rx="7" ry="13" fill="#f4efe4"/>
+        <ellipse cx="17" cy="42" rx="7" ry="13" transform="rotate(-58 17 42)" fill="#f4efe4"/>
+        <ellipse cx="47" cy="42" rx="7" ry="13" transform="rotate(58 47 42)" fill="#f4efe4"/>
+      </svg>
+      <div>
+        <p class="eyebrow">03_Machine_learning.R · Random Forest</p>
+        <h1>鳶尾花種類預測</h1>
+        <p class="lede">這是原本 Shiny app 的獨立網頁版。滑桿仍然即時預測 setosa、versicolor、virginica。計算用的是 R 訓練出來的同一批樹，投票規則也與 <code>randomForest::predict()</code> 相同，而且已經逐筆對過。</p>
+      </div>
+    </div>
+    <nav class="page-nav" aria-label="頁面章節">
+      <a href="#lab">預測</a>
+      <a href="#method">怎麼從 R 轉成 HTML</a>
+      <a href="#formula">公式</a>
+      <a href="#check">與 R 核對</a>
+      <a href="#rerun">如何重做</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="app" id="lab" aria-label="預測">
+      <div class="card controls">
+        <h2>調整特徵</h2>
+        <p class="hint">範圍、步進與預設值和 Shiny 的 <code>sliderInput</code> 相同。單位是公分。</p>
+        <div id="sliders"></div>
+        <div class="presets" id="presets"></div>
+        <div class="summary">
+          <h2>模型摘要</h2>
+          <p>Algorithm: Random Forest</p>
+          <p>Validation: 10-fold Cross Validation</p>
+          <p>Average Accuracy: <span class="acc" id="acc-label"></span></p>
+          <p>Trees: <span id="ntree-label"></span>　mtry: <span id="mtry-label"></span></p>
+          <p class="hint">Average Accuracy 是 10 折準確率的平均，再用 R 的 <code>round(..., 3)</code> 顯示。它不是這一筆花的信心。</p>
+        </div>
+        <div class="importance" style="padding: 12px 0 8px; box-shadow: none; border: 0;">
+          <h2>Variable Importance (Random Forest)</h2>
+          <p class="hint">數值是 <code>caret::varImp()</code> 縮放到 0–100 的結果。長條顏色是原始圖的 <code>#B2182B</code>。</p>
+          <div class="bars" id="imp-bars"></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="card predict" id="predict-card">
+          <p class="kicker">Predicted Species</p>
+          <h2 class="species" id="species-name">—</h2>
+          <p class="zh" id="species-zh"></p>
+          <p class="latin" id="species-latin"></p>
+          <p class="sentence" id="species-sentence" aria-live="polite"></p>
+          <div class="votes" id="votes"></div>
+          <p class="hint" id="vote-note"></p>
+        </div>
+        <div class="card plot">
+          <h2>這筆輸入落在哪裡</h2>
+          <p class="hint">淡色點是 150 筆訓練資料，圓環是目前滑桿。橫軸花瓣長度、縱軸花瓣寬度。這張圖只幫助看位置，分類仍然由整座森林投票決定。</p>
+          <svg class="scatter" id="scatter" viewBox="0 0 640 390" role="img" aria-label="花瓣長度與花瓣寬度散布圖"></svg>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="card" style="padding: 18px 20px;">
+          <h2>原始 Shiny 的說明</h2>
+          <p>This Random Forest model was trained on the classic iris dataset using 10-fold cross-validation. The model evaluates feature combinations to classify flowers into three species: Setosa, Versicolor, and Virginica.</p>
+          <p>You can adjust the feature values using the sliders on the left, and the app will instantly predict the species along with model accuracy information.</p>
+          <p>中文來說：模型用鳶尾花資料與 10 折交叉驗證訓練，把花分成三個種類。左邊的滑桿一動，網頁就用已訓練的森林重新投票。Shiny 畫面只印出勝出的種類；這裡另外把每類的票數顯示出來，因為種類就是由這些票決定的。</p>
+        </div>
+      </div>
+    </section>
+
+    <article class="prose" id="method">
+      <h2>怎麼把 R Shiny 轉成這個 HTML</h2>
+      <p>Shiny 是一支一直開著的 R。瀏覽器每動一次滑桿，就把四個數字送回 R，R 呼叫 <code>predict(model, newdata)</code>，再把文字送回來。單一 HTML 檔案裡沒有 R，也沒有伺服器，所以不能把 <code>shinyApp()</code> 原樣貼上。</p>
+      <p>這次沒有用 JavaScript 重新實作隨機森林的訓練。訓練裡的拔靴抽樣與節點搜尋留在 R。搬進網頁的，是訓練結束之後那一座已經長好的森林，以及 R 在預測時走樹、計票的規則。</p>
+      <div class="steps">
+        <div class="step"><b>01</b>用 <code>03_Machine_learning.R</code> 同一段 <code>train()</code> 在 R 裡長出森林。</div>
+        <div class="step"><b>02</b><code>getTree()</code> 讀出每一棵樹的切點與子節點，寫進這個 HTML。</div>
+        <div class="step"><b>03</b>瀏覽器的 <code>predict.js</code> 沿同一條路走樹、計票，得到種類。</div>
+      </div>
+      <p>對應的檔案是 <code>export_model.R</code>（訓練、匯出、核對）、<code>predict.js</code>（走樹與投票）、<code>index.template.html</code>（這個版面）。執行匯出腳本後得到現在開啟的 <code>index.html</code>。模型嵌在檔案裡，打開即可預測，不需要再連上 R。</p>
+
+      <h3>訓練呼叫與 Shiny 相同</h3>
+      <p><code>03_Machine_learning.R</code> 在建立介面之前先做這一段。匯出腳本使用同一順序：先 <code>set.seed(123)</code>，再 <code>trainControl(method = "cv", number = 10)</code>，再 <code>train(Species ~ ., data = iris, method = "rf", trControl = ctrl)</code>。中間沒有其他會消耗亂數的步驟。</p>
+<pre><code>set.seed(123)
+data(iris)
+ctrl &lt;- trainControl(method = "cv", number = 10)
+model &lt;- train(Species ~ ., data = iris, method = "rf", trControl = ctrl)
+accuracy &lt;- mean(model$resample$Accuracy)</code></pre>
+      <p><code>method = "rf"</code> 使用 <code>randomForest::randomForest</code>。這次呼叫沒有另外指定 <code>ntree</code>、<code>nodesize</code> 或 <code>importance</code>，所以沿用套件預設：500 棵樹、分類的 <code>nodesize = 1</code>、每棵樹用拔靴樣本。實際棵數與選到的 <code>mtry</code> 寫在左欄，也寫在頁尾的版本紀錄。</p>
+      <p>caret 預設會試三個 <code>mtry</code>。四個預測變數、分類問題時，<code>caret::var_seq(p = 4, classification = TRUE, len = 3)</code> 是 <code>floor(seq(2, 4, length.out = 3))</code>，也就是 2、3、4。每一個候選都做 10 折交叉驗證。caret 採用平均準確率最高的那個，記在 <code>model$bestTune</code>，再用這個 <code>mtry</code> 與全部 150 筆重訓最終森林。網頁裡的樹是這座 <code>model$finalModel</code>，不是某一個交叉驗證折裡的樹。</p>
+      <div class="table-wrap wide">
+        <table>
+          <caption class="hint">這次 <code>model$results</code>。標出的列是 <code>bestTune</code>。</caption>
+          <thead><tr><th>mtry</th><th>平均 Accuracy</th><th>Accuracy SD</th><th></th></tr></thead>
+          <tbody id="tune-body"></tbody>
+        </table>
+      </div>
+
+      <h3>滑桿怎麼對到四個變數</h3>
+      <p>Shiny 的 server 把四個滑桿組成一列資料，欄位名稱必須是模型公式裡的名稱，然後呼叫 <code>predict(model, newdata)</code>。caret 的 rf 預測會進到 <code>predict(finalModel, newdata)</code>，所以兩邊用的是同一座森林、同一組票數。沒有平手時，兩個呼叫印出的種類相同。平手時它們各自抽一次亂數，印出的文字可以不同；這個網頁改為把平手標出來。</p>
+      <div class="compare">
+        <div>
+          <h3>R / Shiny</h3>
+<pre><code>newdata &lt;- data.frame(
+  Sepal.Length = input$sepal_length,
+  Sepal.Width  = input$sepal_width,
+  Petal.Length = input$petal_length,
+  Petal.Width  = input$petal_width
+)
+predict(model, newdata)</code></pre>
+        </div>
+        <div>
+          <h3>這個網頁</h3>
+<pre><code>const x = [
+  sepalLength, sepalWidth,
+  petalLength, petalWidth
+];
+predictCase(model, x).species;</code></pre>
+        </div>
+      </div>
+      <p><code>x</code> 的順序是森林的變數順序，也就是 <code>getTree()</code> 裡 split var 的編號。下表是這次模型的對應。split var 在 R 裡從 1 起算，JavaScript 陣列從 0 起算，所以走樹時用 <code>split var − 1</code>。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Shiny input</th><th>欄位</th><th>split var</th><th>滑桿</th></tr></thead>
+          <tbody id="map-body"></tbody>
+        </table>
+      </div>
+
+      <h2 id="formula">預測公式</h2>
+      <h3>一棵樹</h3>
+      <p><code>randomForest::getTree()</code> 的每一列是一個節點。split var 為 0 表示葉子。內部節點記錄分割變數、切點、左子節點與右子節點。<code>randomForest</code> 的預測往左的條件是特徵小於等於切點。網頁使用同一個條件。</p>
+<pre><code>node ← 根節點
+while 這個節點不是葉子:
+    v ← split var
+    if x[v] ≤ split point:
+        node ← left daughter
+    else:
+        node ← right daughter
+這棵樹投票給葉子上記錄的種類</code></pre>
+      <p id="root-example"></p>
+      <p>子節點編號有一次純索引轉換：R 的列號從 1 開始，終端節點的子節點寫 0；網頁改成從 0 開始，終端改記 −1。比較的數字沒有改。切點不以十進位小數四捨五入存檔，而是把 R 的 IEEE-754 倍精度浮點數以 little-endian 位元組做 base64。瀏覽器解回同一個 double 再和 <code>x[v]</code> 比較，避免切點剛好等於輸入時走錯邊。</p>
+      <p>這次森林共有 <span id="node-count"></span> 個節點，平均每棵樹 <span id="node-avg"></span> 個節點。</p>
+
+      <h3>500 棵樹如何變成一個種類</h3>
+      <p>每一棵樹投一票。<code>vote(c)</code> 是投給種類 c 的樹數。<code>randomForest::predict()</code> 的分類規則寫在套件說明裡：勝出的種類是「票數比例 / cutoff」最大的那個。比例是 <code>vote(c) / ntree</code>。預設 cutoff 是每個種類 <code>1 / k</code>。k = 3 時，三個 cutoff 都是 1/3，<code>ntree</code> 也相同，所以比較 <code>vote(c) / cutoff(c)</code> 的順序就是比較票數。</p>
+<pre><code>vote(c) = 投給種類 c 的樹數
+score(c) = (vote(c) / ntree) / cutoff(c)
+預測種類 = argmax score(c)</code></pre>
+      <p id="cutoff-note"></p>
+      <p>票數完全相同時，<code>randomForest</code> 會用亂數在並列的種類裡挑一個，所以 Shiny 若遇到平手，重新整理可能印出不同種類。這個網頁不算那一次亂數。它把所有並列第一的種類都標成平手。沒有平手時，顯示的種類與 <code>predict()</code> 相同。百分比只放在票數旁邊方便閱讀，判斷用的是票數，不是四捨五入後的百分比。</p>
+
+      <h3>變數重要性</h3>
+      <p>Shiny 呼叫 <code>importance &lt;- varImp(model)</code>，長條圖的 y 是 <code>importance$importance[, 1]</code>。這次 <code>train()</code> 沒有設 <code>importance = TRUE</code>，所以 <code>randomForest::importance()</code> 的那一欄是 <code>MeanDecreaseGini</code>，不是排列重要性。caret 再把它縮放到 0 到 100：</p>
+<pre><code>shifted(j) = Gini(j) − min(Gini)
+I(j) = shifted(j) / max(shifted) × 100</code></pre>
+      <p>最小的變數變成 0，最大的變成 100。左欄長條使用這個 I(j)，由大到小排列，顏色 <code>#B2182B</code>。</p>
+      <p id="ggplot-note"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>變數</th><th>MeanDecreaseGini</th><th>縮放後 I(j)</th></tr></thead>
+          <tbody id="imp-table"></tbody>
+        </table>
+      </div>
+      <p id="imp-check"></p>
+
+      <h3>畫面上的 Average Accuracy</h3>
+      <p>Shiny 的文字是 <code>paste("Average Accuracy:", round(accuracy, 3))</code>，而 <code>accuracy &lt;- mean(model$resample$Accuracy)</code>。這是 10 個驗證折的準確率平均，再由 R 四捨五入到小數三位。網頁左欄直接使用 R 算出的這兩個結果，避免用 JavaScript 再實作一次 R 的 <code>round</code>。</p>
+      <p>未四捨五入的平均是 <span id="acc-full"></span>。JavaScript 把這 10 個折再相加除以 10，與 R 的 <code>mean()</code> 相差 <span id="mean-diff"></span>。10⁻¹² 以內的差距來自雙精度相加的順序，左欄三位小數仍是 R 的 <code>round(accuracy, 3)</code>。下表是 <code>model$resample</code>，依折的名稱排序。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fold</th><th>Accuracy</th><th>Kappa</th></tr></thead>
+          <tbody id="fold-body"></tbody>
+        </table>
+      </div>
+      <p>另外把 150 筆訓練資料再送進 <code>predict(model, iris)</code>，吻合率是 <span id="train-acc"></span>。這是訓練集上的結果，不是左欄的 Average Accuracy，也不是 out-of-bag 誤差。交叉驗證的平均通常會低於訓練集吻合率，因為每一折都有沒參加該折訓練的樣本。</p>
+      <div class="table-wrap">
+        <table>
+          <caption class="hint">列是預測種類，欄是資料原本的種類。</caption>
+          <thead><tr id="cm-head"></tr></thead>
+          <tbody id="cm-body"></tbody>
+        </table>
+      </div>
+
+      <h2 id="check">如何確認公式一樣</h2>
+      <p>核對分三層，而且預測那層用的就是網頁裡的 <code>predict.js</code>，不是另外寫一支只在 R 裡自比自的迴圈。</p>
+      <ol>
+        <li>用 R 依照 <code>getTree()</code> 的列，走 5 筆資料的全部樹，與 <code>predict(finalModel, predict.all = TRUE)</code> 的每一棵樹輸出比較。這確認匯出的節點沒有讀錯。</li>
+        <li>把 <code>predict.js</code> 放進 R 的 V8 引擎，對下面這批輸入計算票數，與 <code>predict(finalModel, type = "vote", norm.votes = FALSE)</code> 的整數票數比較。</li>
+        <li>沒有平手的列，種類要同時等於 Shiny 使用的 <code>predict(model, newdata)</code> 與 <code>predict(finalModel, newdata)</code>。平手的列則確認 R 印出的種類是並列第一的其中一個。</li>
+      </ol>
+      <p>驗證輸入有四部分：全部 150 筆訓練資料、滑桿範圍內的網格（<span id="grid-note"></span>）、以 <code>set.seed(456)</code> 在滑桿範圍內抽的 200 點，以及 Shiny 預設值和兩個滑桿角落。列數是訓練 <span id="n-train"></span>、網格 <span id="n-grid"></span>、隨機 <span id="n-rand"></span>、定錨 <span id="n-extra"></span>，合計 <span id="n-total"></span>。定錨列可能與網格重複，合計是送進 <code>predict()</code> 的列數。</p>
+      <div class="status" id="verify-banner"></div>
+      <p>網頁載入後會用同一支 <code>predictCase()</code> 把下表再算一次。右欄的 JavaScript 票數如果與 R 不同，上方提示會變成未通過。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>例子</th><th>輸入</th><th id="vote-head-r">R 的票數</th><th id="vote-head-js">網頁重算</th><th>R 的種類</th></tr>
+          </thead>
+          <tbody id="example-body"></tbody>
+        </table>
+      </div>
+      <p>票數順序一律是 <span id="class-order"></span>，與 <code>iris$Species</code> 的因子順序相同。</p>
+
+      <h2 id="rerun">界限與如何重做這個檔案</h2>
+      <p>重新執行 Shiny 腳本時，若 R、<code>caret</code> 或 <code>randomForest</code> 的版本不同，<code>set.seed(123)</code> 仍可能長出另一座森林。這個 HTML 固定的是這一次訓練的樹。滑桿不會在瀏覽器裡重訓。平手也不做 R 內部的那一次亂數抽取。</p>
+      <p>要重做這份網頁，在此資料夾用已安裝 <code>caret</code>、<code>randomForest</code>、<code>jsonlite</code>、<code>V8</code>、<code>ggplot2</code> 的 R 執行 <code>Rscript export_model.R</code>。腳本會重訓、再跑上述核對，通過之後才覆寫 <code>index.html</code>。頁尾是產生這個檔案的環境。</p>
+    </article>
+  </div>
+</main>
+<footer>
+  <div class="wrap" id="footer-line"></div>
+</footer>
+
+<script id="model-data" type="application/json">___MODEL_JSON___</script>
+<script id="verify-data" type="application/json">___VERIFY_JSON___</script>
+<script>
+___PREDICT_JS___
+</script>
+<script>
+const MODEL = hydrateModel(JSON.parse(document.getElementById("model-data").textContent));
+const VERIFY = JSON.parse(document.getElementById("verify-data").textContent);
+
+const COLOR = { setosa: "#c4842d", versicolor: "#2a7563", virginica: "#3a4d86" };
+const ZH = { setosa: "山鳶尾", versicolor: "變色鳶尾", virginica: "維吉尼亞鳶尾" };
+const LATIN = { setosa: "Iris setosa", versicolor: "Iris versicolor", virginica: "Iris virginica" };
+
+const state = MODEL.features.map((f) => f.value);
+let activePreset = "Shiny 預設值";
+
+function el(tag, props, children) {
+  const node = document.createElement(tag);
+  if (props) {
+    Object.keys(props).forEach((key) => {
+      if (key === "text") node.textContent = props[key];
+      else if (key === "class") node.className = props[key];
+      else node.setAttribute(key, props[key]);
+    });
+  }
+  (children || []).forEach((child) => { if (child) node.appendChild(child); });
+  return node;
+}
+function oneDecimal(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+function showNum(v) {
+  if (Math.abs(v - Math.round(v * 10) / 10) < 1e-9) return (Math.round(v * 10) / 10).toFixed(1);
+  return Number(v).toPrecision(6);
+}
+function snap(v, feature) {
+  if (!Number.isFinite(v)) v = feature.value;
+  const steps = Math.round((v - feature.min) / feature.step);
+  let out = Math.round((feature.min + steps * feature.step) * 10) / 10;
+  if (out < feature.min) out = Math.round(feature.min * 10) / 10;
+  if (out > feature.max) out = Math.round(feature.max * 10) / 10;
+  return out;
+}
+function featureRange(index) {
+  const arr = MODEL.iris.values[index];
+  let min = arr[0];
+  let max = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+    if (arr[i] > max) max = arr[i];
+  }
+  return [min, max];
+}
+
+function buildSliders() {
+  const root = document.getElementById("sliders");
+  MODEL.features.forEach((feature, index) => {
+    const [dMin, dMax] = featureRange(index);
+    const range = el("input", { type: "range", min: feature.min, max: feature.max, step: feature.step, value: state[index], "aria-label": feature.label });
+    const number = el("input", { type: "number", min: feature.min, max: feature.max, step: feature.step, value: oneDecimal(state[index]), "aria-label": feature.label + " 數值" });
+    const block = el("div", { class: "slider-block" }, [
+      el("div", { class: "slider-head" }, [
+        el("strong", { text: feature.label }),
+        el("span", { text: feature.zh })
+      ]),
+      range,
+      el("div", { class: "slider-foot" }, [
+        el("span", { class: "range-note", text: "訓練資料 " + oneDecimal(dMin) + "–" + oneDecimal(dMax) }),
+        number
+      ])
+    ]);
+    range.addEventListener("input", () => {
+      activePreset = "";
+      state[index] = snap(Number(range.value), feature);
+      number.value = oneDecimal(state[index]);
+      renderPrediction();
+    });
+    number.addEventListener("change", () => {
+      activePreset = "";
+      state[index] = snap(Number(number.value), feature);
+      range.value = String(state[index]);
+      number.value = oneDecimal(state[index]);
+      renderPrediction();
+    });
+    root.appendChild(block);
+    feature._range = range;
+    feature._number = number;
+  });
+}
+
+function buildPresets() {
+  const root = document.getElementById("presets");
+  MODEL.presets.forEach((preset) => {
+    const button = el("button", { type: "button", text: preset.name });
+    button.addEventListener("click", () => {
+      activePreset = preset.name;
+      preset.x.forEach((value, index) => { state[index] = value; });
+      renderPrediction();
+    });
+    preset._button = button;
+    root.appendChild(button);
+  });
+}
+
+function renderImportance() {
+  const scaled = MODEL.importance.scaled;
+  const order = scaled.map((value, index) => index).sort((a, b) => scaled[b] - scaled[a] || a - b);
+  const bars = document.getElementById("imp-bars");
+  const body = document.getElementById("imp-table");
+  bars.replaceChildren();
+  body.replaceChildren();
+  const raw = MODEL.importance.rawValues;
+  order.forEach((index) => {
+    const name = MODEL.importance.features[index];
+    const feature = MODEL.features.find((item) => item.name === name);
+    bars.appendChild(el("div", { class: "bar-row" }, [
+      el("span", { text: feature ? feature.label : name }),
+      el("div", { class: "bar-track" }, [el("div", { class: "bar-fill", style: "width:" + Math.max(0, scaled[index]) + "%" })]),
+      el("span", { class: "bar-val", text: formatScaled(scaled[index]) })
+    ]));
+  });
+  MODEL.importance.features.forEach((name, index) => {
+    const row = document.createElement("tr");
+    row.appendChild(el("td", { text: name }));
+    row.appendChild(el("td", { text: raw[index].toPrecision(6) }));
+    row.appendChild(el("td", { text: formatScaled(scaled[index]) }));
+    body.appendChild(row);
+  });
+  const recomputed = scaleImportance(raw);
+  let diff = 0;
+  recomputed.forEach((value, index) => { diff = Math.max(diff, Math.abs(value - scaled[index])); });
+  const check = document.getElementById("imp-check");
+  check.textContent = diff === 0
+    ? "頁面用上面的式子把 Gini 再算一次，與 R 的 varImp() 完全相同。"
+    : "頁面用上面的式子把 Gini 再算一次，與 R 的 varImp() 最大絕對差是 " + diff + "。";
+}
+
+function formatScaled(v) {
+  if (Math.abs(v - 100) < 1e-8) return "100";
+  if (Math.abs(v) < 1e-8) return "0";
+  return v.toFixed(1);
+}
+
+function renderPrediction() {
+  const result = predictCase(MODEL, state);
+  const card = document.getElementById("predict-card");
+  const name = document.getElementById("species-name");
+  const zh = document.getElementById("species-zh");
+  const latin = document.getElementById("species-latin");
+  const sentence = document.getElementById("species-sentence");
+  const note = document.getElementById("vote-note");
+  const votes = document.getElementById("votes");
+  if (result.tie) {
+    card.style.borderTopColor = "#9d2c3a";
+    name.textContent = "平手";
+    zh.textContent = result.leaders.map((species) => species + " " + ZH[species]).join("、");
+    latin.textContent = "這些種類的 score 相同";
+  } else {
+    card.style.borderTopColor = COLOR[result.species] || "#9d2c3a";
+    name.textContent = result.species;
+    zh.textContent = ZH[result.species] || "";
+    latin.textContent = LATIN[result.species] || "";
+  }
+  const parts = MODEL.classes.map((species, index) => species + " " + result.votes[index]);
+  sentence.textContent = MODEL.ntree + " 棵樹的票數是 " + parts.join("、") + "。" +
+    (result.tie
+      ? " 這些種類並列第一。Shiny 的 randomForest 會從其中隨機印出一個；這個網頁把平手留在畫面上。"
+      : " 票數最多的是 " + result.species + "，所以預測種類是 " + result.species + "。");
+  note.textContent = "判斷使用 vote(c) / cutoff(c)。這次 cutoff 相同，因此就是票數最多的種類。百分比是 vote / " + MODEL.ntree + "，只供閱讀。";
+  votes.replaceChildren();
+  MODEL.classes.forEach((species, index) => {
+    const pct = (result.prob[index] * 100).toFixed(1);
+    votes.appendChild(el("div", { class: "vote" }, [
+      el("div", {}, [el("span", { class: "swatch", style: "background:" + COLOR[species] }), el("span", { text: species })]),
+      el("div", { class: "track" }, [el("div", { class: "fill", style: "width:" + pct + "%;background:" + COLOR[species] })]),
+      el("div", { class: "vote-num", text: result.votes[index] + " 票 · " + pct + "%" })
+    ]));
+  });
+  MODEL.features.forEach((feature, index) => {
+    feature._range.value = String(state[index]);
+    feature._number.value = oneDecimal(state[index]);
+  });
+  MODEL.presets.forEach((preset) => {
+    preset._button.classList.toggle("active", preset.name === activePreset);
+  });
+  drawScatter();
+}
+
+function drawScatter() {
+  const svg = document.getElementById("scatter");
+  const xIndex = MODEL.features.findIndex((feature) => feature.name === "Petal.Length");
+  const yIndex = MODEL.features.findIndex((feature) => feature.name === "Petal.Width");
+  const xFeature = MODEL.features[xIndex];
+  const yFeature = MODEL.features[yIndex];
+  const W = 640, H = 390;
+  const pad = { l: 68, r: 18, t: 18, b: 46 };
+  const sx = (v) => pad.l + (v - xFeature.min) / (xFeature.max - xFeature.min) * (W - pad.l - pad.r);
+  const sy = (v) => pad.t + (1 - (v - yFeature.min) / (yFeature.max - yFeature.min)) * (H - pad.t - pad.b);
+  const ns = "http://www.w3.org/2000/svg";
+  svg.replaceChildren();
+  function node(tag, props) {
+    const item = document.createElementNS(ns, tag);
+    Object.keys(props).forEach((key) => item.setAttribute(key, props[key]));
+    return item;
+  }
+  for (let tick = xFeature.min; tick <= xFeature.max + 1e-9; tick += 1) {
+    svg.appendChild(node("line", { x1: sx(tick), x2: sx(tick), y1: pad.t, y2: H - pad.b, stroke: "#efe6da", "stroke-width": "1" }));
+    const label = node("text", { x: sx(tick), y: H - 16, "text-anchor": "middle", fill: "#655d54", "font-size": "12" });
+    label.textContent = String(tick);
+    svg.appendChild(label);
+  }
+  for (let tick = 0.5; tick <= yFeature.max + 1e-9; tick += 0.5) {
+    svg.appendChild(node("line", { x1: pad.l, x2: W - pad.r, y1: sy(tick), y2: sy(tick), stroke: "#efe6da", "stroke-width": "1" }));
+    const label = node("text", { x: pad.l - 8, y: sy(tick) + 4, "text-anchor": "end", fill: "#655d54", "font-size": "12" });
+    label.textContent = tick.toFixed(1);
+    svg.appendChild(label);
+  }
+  const xs = MODEL.iris.values[xIndex];
+  const ys = MODEL.iris.values[yIndex];
+  MODEL.iris.species.forEach((species, index) => {
+    svg.appendChild(node("circle", {
+      cx: sx(xs[index]), cy: sy(ys[index]), r: "4.2",
+      fill: COLOR[species], "fill-opacity": "0.78"
+    }));
+  });
+  svg.appendChild(node("circle", {
+    cx: sx(state[xIndex]), cy: sy(state[yIndex]), r: "8",
+    fill: "none", stroke: "#9d2c3a", "stroke-width": "2.5"
+  }));
+  const xlab = node("text", { x: (pad.l + W - pad.r) / 2, y: H - 2, "text-anchor": "middle", fill: "#221c18", "font-size": "13" });
+  xlab.textContent = "Petal Length";
+  svg.appendChild(xlab);
+  const ylab = node("text", {
+    x: 16,
+    y: (pad.t + H - pad.b) / 2,
+    fill: "#221c18",
+    "font-size": "13",
+    "text-anchor": "middle",
+    transform: "rotate(-90 16 " + ((pad.t + H - pad.b) / 2) + ")"
+  });
+  ylab.textContent = "Petal Width";
+  svg.appendChild(ylab);
+}
+
+function renderDocs() {
+  document.getElementById("acc-label").textContent = MODEL.accuracyLabel;
+  document.getElementById("ntree-label").textContent = String(MODEL.ntree);
+  document.getElementById("mtry-label").textContent = String(MODEL.mtry);
+  document.getElementById("acc-full").textContent = MODEL.accuracyText;
+  document.getElementById("mean-diff").textContent = VERIFY.meanDiff === 0 ? "0" : Number(VERIFY.meanDiff).toExponential(2);
+  document.getElementById("train-acc").textContent = MODEL.trainAccuracyLabel;
+  document.getElementById("node-count").textContent = String(MODEL.nodeCount);
+  document.getElementById("node-avg").textContent = (MODEL.nodeCount / MODEL.ntree).toFixed(1);
+  document.getElementById("n-train").textContent = String(VERIFY.trainingRows);
+  document.getElementById("n-grid").textContent = String(VERIFY.gridRows);
+  document.getElementById("n-rand").textContent = String(VERIFY.randomRows);
+  document.getElementById("n-extra").textContent = String(VERIFY.extraRows);
+  document.getElementById("n-total").textContent = String(VERIFY.totalRows);
+  document.getElementById("grid-note").textContent = VERIFY.gridNote;
+  document.getElementById("class-order").textContent = MODEL.classes.join("、");
+  const voteOrder = MODEL.classes.join(" / ");
+  document.getElementById("vote-head-r").textContent = "R 的票數（" + voteOrder + "）";
+  document.getElementById("vote-head-js").textContent = "網頁重算（" + voteOrder + "）";
+
+  const tune = document.getElementById("tune-body");
+  MODEL.tune.forEach((row) => {
+    const tr = document.createElement("tr");
+    if (row.selected) tr.className = "selected";
+    [row.mtry, Number(row.Accuracy).toFixed(4), Number(row.AccuracySD).toFixed(4), row.selected ? "採用" : ""].forEach((value) => {
+      tr.appendChild(el("td", { text: String(value) }));
+    });
+    tune.appendChild(tr);
+  });
+
+  const map = document.getElementById("map-body");
+  const shinyNames = { "Sepal.Length": "sepal_length", "Sepal.Width": "sepal_width", "Petal.Length": "petal_length", "Petal.Width": "petal_width" };
+  MODEL.features.forEach((feature, index) => {
+    const tr = document.createElement("tr");
+    [shinyNames[feature.name] || feature.name, feature.name, String(index + 1), feature.min + "–" + feature.max + "，步進 " + feature.step + "，預設 " + feature.value].forEach((value) => {
+      tr.appendChild(el("td", { text: String(value) }));
+    });
+    map.appendChild(tr);
+  });
+
+  const folds = document.getElementById("fold-body");
+  MODEL.folds.forEach((fold) => {
+    const tr = document.createElement("tr");
+    [fold.name, Number(fold.Accuracy).toFixed(4), Number(fold.Kappa).toFixed(4)].forEach((value) => tr.appendChild(el("td", { text: value })));
+    folds.appendChild(tr);
+  });
+
+  const head = document.getElementById("cm-head");
+  head.appendChild(el("th", { text: "預測 \\ 實際" }));
+  MODEL.confusion.classes.forEach((name) => head.appendChild(el("th", { text: name })));
+  const cm = document.getElementById("cm-body");
+  MODEL.confusion.matrix.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    tr.appendChild(el("th", { text: MODEL.confusion.classes[index] }));
+    row.forEach((count) => tr.appendChild(el("td", { text: String(count) })));
+    cm.appendChild(tr);
+  });
+
+  const root = MODEL.trees[0];
+  const rootText = document.getElementById("root-example");
+  if (root.V[0] === 0) {
+    rootText.textContent = "第 1 棵樹的根節點本身就是葉子。";
+  } else {
+    const feature = MODEL.features[root.V[0] - 1];
+    rootText.textContent = "以第 1 棵樹的根節點為例：它用 " + feature.name + "（split var = " + root.V[0] + "）做分割，切點的完整雙精度值參與比較，印出來約為 " + root.S[0].toPrecision(8) + "。輸入的這個特徵小於等於切點就往左子節點，否則往右。";
+  }
+
+  document.getElementById("cutoff-note").textContent = VERIFY.equalCutoff
+    ? "這次三個 cutoff 的位元完全相同（都是 1/3 那個雙精度數）。因此 argmax score(c) 就是 argmax vote(c)。"
+    : "這次三個 cutoff 不完全相同，網頁比較的是 vote(c) / cutoff(c)。";
+
+  const ggplot = document.getElementById("ggplot-note");
+  ggplot.textContent = VERIFY.ggplot === "ok"
+    ? "在這次的 R 工作階段重跑 Shiny 那段 ggplot（資料為 varImp 物件、y 為 importance 第一欄、顏色 #B2182B、coord_flip）可以建立圖層。左欄長條使用同一個縮放後的向量。"
+    : "Shiny 原始碼把 varImp 物件直接交給 ggplot()。這次重跑時沒有畫成圖：" + VERIFY.ggplot + "。左欄改畫 varImp(model)$importance 的第一欄，也就是該段 aes 指定的 y。";
+
+  const banner = document.getElementById("verify-banner");
+  const passed = VERIFY.voteMismatches === 0 && VERIFY.nonTieClassMismatches === 0 && VERIFY.tieOutsideLeaders === 0;
+  banner.classList.toggle("bad", !passed);
+  banner.textContent = passed
+    ? "V8 裡的 predict.js 與 R 的投票向量在 " + VERIFY.totalRows + " 列全部相同。沒有平手的列，種類也與 predict(model) 相同。平手有 " + VERIFY.ties + " 列；這些列裡 R 印出的種類都屬於並列第一。"
+    : "核對沒有通過。投票不一致 " + VERIFY.voteMismatches + " 列，種類不一致 " + VERIFY.nonTieClassMismatches + " 列。";
+
+  const examples = document.getElementById("example-body");
+  let liveOk = true;
+  VERIFY.examples.forEach((example) => {
+    const again = predictCase(MODEL, example.x);
+    const same = again.votes.length === example.votes.length && again.votes.every((vote, index) => vote === example.votes[index]);
+    if (!same) liveOk = false;
+    const tr = document.createElement("tr");
+    const input = MODEL.features.map((feature, index) => feature.label + " " + showNum(example.x[index])).join("，");
+    [example.name, input, example.votes.join(" / "), again.votes.join(" / "), example.tie ? example.rSpecies + "（平手，R 印出這一類）" : example.rSpecies].forEach((value) => {
+      tr.appendChild(el("td", { text: String(value) }));
+    });
+    examples.appendChild(tr);
+  });
+  if (!liveOk) {
+    banner.classList.add("bad");
+    banner.textContent += " 這個頁面重新計算例子時，票數與內嵌的 R 結果不同。";
+  }
+
+  const versions = MODEL.versions;
+  document.getElementById("footer-line").textContent =
+    "由 export_model.R 於 " + MODEL.generated + " 產生。" +
+    versions.r + " · caret " + versions.caret + " · randomForest " + versions.randomForest +
+    " · RNGkind " + versions.rng + " · set.seed(" + versions.seed + ")。";
+}
+
+buildSliders();
+buildPresets();
+renderImportance();
+renderDocs();
+renderPrediction();
+const legend = document.getElementById("legend");
+MODEL.classes.forEach((species) => {
+  legend.appendChild(el("span", {}, [
+    el("span", { class: "swatch", style: "background:" + COLOR[species] }),
+    el("span", { text: species + " " + ZH[species] })
+  ]));
+});
+legend.appendChild(el("span", { text: "圓環：目前輸入" }));
+</script>
+</body>
+</html>
